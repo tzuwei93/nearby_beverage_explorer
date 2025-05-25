@@ -1,0 +1,21 @@
+{
+  "name": "nearby-beverage-explorer-web",
+  "homepage": "https://william0537.github.io/nearby-beverage-explorer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && gh-pages -d dist"
+  },
+  "dependencies": {
+    "hyparquet": "latest",
+    "vue": "^3.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.2.0",
+    "gh-pages": "^5.0.0",
+    "vite": "^4.3.0"
+  }
+}

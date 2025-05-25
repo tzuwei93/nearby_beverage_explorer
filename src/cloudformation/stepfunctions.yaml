@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Nearby Beverage Explorer - Step Functions'
+
+Parameters:
+  AppName:
+    Type: String
+    Description: Name prefix for all resources
+  
+  StepFunctionRoleArn:
+    Type: String
+    Description: ARN of the Step Function role
+  
+  EventBridgeRoleArn:
+    Type: String
+    Description: ARN of the EventBridge role
+  
+  GooglePlacesCollectorFunctionArn:
+    Type: String
+    Description: ARN of the Places Collector Lambda function
+  
+  JsonToHudiFunctionArn:
+    Type: String
+    Description: ARN of the JSON to Hudi Lambda function
+  
+  HudiToParquetFunctionArn:
+    Type: String
+    Description: ARN of the Hudi to Parquet Lambda function
+
+Resources:
+  # Step Function Definition
+  DataProcessingStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${AppName}-data-processing'
+      RoleArn: !Ref StepFunctionRoleArn
+      Definition:
+        StartAt: CollectPlacesData
+        States:
+          CollectPlacesData:
+            Type: Task
+            Resource: !Ref GooglePlacesCollectorFunctionArn
+            ResultPath: "$.places_result"
+            Next: ConvertToHudi
+            Retry:
+              - ErrorEquals: ["States.TaskFailed"]
+                IntervalSeconds: 30
+                MaxAttempts: 2
+                BackoffRate: 2
+            Catch:
+              - ErrorEquals: ["States.ALL"]
+                Next: FailState
+                ResultPath: "$.error"
+
+          ConvertToHudi:
+            Type: Task
+            Resource: !Ref JsonToHudiFunctionArn
+            InputPath: "$.places_result.body"
+            ResultPath: "$.hudi_result"
+            Next: ConvertToParquet
+            Retry:
+              - ErrorEquals: ["States.TaskFailed"]
+                IntervalSeconds: 30
+                MaxAttempts: 2
+                BackoffRate: 2
+            Catch:
+              - ErrorEquals: ["States.ALL"]
+                Next: FailState
+                ResultPath: "$.error"
+
+          ConvertToParquet:
+            Type: Task
+            Resource: !Ref HudiToParquetFunctionArn
+            InputPath: "$.hudi_result.body"
+            ResultPath: "$.parquet_result"
+            Next: SuccessState
+            Retry:
+              - ErrorEquals: ["States.TaskFailed"]
+                IntervalSeconds: 30
+                MaxAttempts: 2
+                BackoffRate: 2
+            Catch:
+              - ErrorEquals: ["States.ALL"]
+                Next: FailState
+                ResultPath: "$.error"
+
+          SuccessState:
+            Type: Succeed
+
+          FailState:
+            Type: Fail
+            Cause: "Data Processing Pipeline Failed"
+            Error: "Please check the execution history for details"
+
+  # EventBridge Rule for Friday 6 AM Schedule
+  WeeklyScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${AppName}-weekly-schedule'
+      Description: 'Triggers data collection pipeline every Friday at 6 AM'
+      ScheduleExpression: 'cron(0 6 ? * FRI *)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt DataProcessingStateMachine.Arn
+          Id: 'WeeklyDataCollection'
+          RoleArn: !Ref EventBridgeRoleArn
+
+Outputs:
+  StateMachineArn:
+    Description: ARN of the Step Functions state machine
+    Value: !Ref DataProcessingStateMachine
+    Export:
+      Name: !Sub '${AWS::StackName}-StateMachineArn'

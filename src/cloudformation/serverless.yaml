@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Nearby Beverage Explorer - Lambda Functions Stack'
+
+Parameters:
+  AppName:
+    Type: String
+    Default: nearby-beverage-explorer
+    Description: Name prefix for all resources
+
+  Version:
+    Type: String
+    Default: latest
+    Description: Version tag for Lambda function container images
+
+  LocationLat:
+    Type: String
+    Default: '25.041171'
+    Description: Latitude for beverage search center point
+
+  LocationLng:
+    Type: String
+    Default: '121.565227'
+    Description: Longitude for beverage search center point
+
+  SearchRadiusMeters:
+    Type: Number
+    Default: 5000
+    Description: Search radius in meters
+
+  S3BucketName:
+    Type: String
+    Default: nearby-beverage-explorer
+    Description: S3 bucket for storing application data
+
+  ECRRepositoryName:
+    Type: String
+    Default: nearby-beverage-explorer
+    Description: ECR repository for Lambda function container images
+
+  CreateECRRepository:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Whether to create a new ECR repository
+    
+  GoogleMapsApiKey:
+    Type: String
+    NoEcho: true
+    Description: Google Maps API Key for Places API
+
+  RawDataPrefix:
+    Type: String
+    Default: 'raw'
+    Description: S3 prefix for raw data
+
+  HudiDataPrefix:
+    Type: String
+    Default: 'hudi'
+    Description: S3 prefix for Hudi data
+
+  AnalyticsDataPrefix:
+    Type: String
+    Default: 'analytics'
+    Description: S3 prefix for analytics data
+
+Resources:
+  # Storage Stack (S3 and ECR)
+  StorageStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${S3BucketName}.s3.${AWS::Region}.amazonaws.com/cloudformation/storage.yaml'
+      Parameters:
+        S3BucketName: !Ref S3BucketName
+        ECRRepositoryName: !Ref ECRRepositoryName
+        CreateECRRepository: !Ref CreateECRRepository
+
+  # IAM Stack (Roles and Policies)
+  IAMStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: StorageStack
+    Properties:
+      TemplateURL: !Sub 'https://${S3BucketName}.s3.${AWS::Region}.amazonaws.com/cloudformation/iam.yaml'
+      Parameters:
+        DataBucketArn: !GetAtt StorageStack.Outputs.DataBucketArn
+        # For the initial deployment, these will use the default '*' value
+        # On subsequent deployments, they'll use the actual ARNs
+        GooglePlacesCollectorFunctionArn: '*'
+        JsonToHudiFunctionArn: '*'
+        HudiToParquetFunctionArn: '*'
+        ECRRepositoryName: !Ref ECRRepositoryName
+
+  # Lambda Functions Stack
+  LambdaStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: [StorageStack, IAMStack]
+    Properties:
+      TemplateURL: !Sub 'https://${S3BucketName}.s3.${AWS::Region}.amazonaws.com/cloudformation/lambda.yaml'
+      Parameters:
+        AppName: !Ref AppName
+        Version: !Ref Version
+        ECRRepositoryName: !Ref ECRRepositoryName
+        LambdaExecutionRoleArn: !GetAtt IAMStack.Outputs.LambdaExecutionRoleArn
+        DataBucketName: !GetAtt StorageStack.Outputs.DataBucketName
+        LocationLat: !Ref LocationLat
+        LocationLng: !Ref LocationLng
+        SearchRadiusMeters: !Ref SearchRadiusMeters
+        GoogleMapsApiKey: !Ref GoogleMapsApiKey
+        RawDataPrefix: !Ref RawDataPrefix
+        HudiDataPrefix: !Ref HudiDataPrefix
+        AnalyticsDataPrefix: !Ref AnalyticsDataPrefix
+
+  # Step Functions Stack
+  StepFunctionsStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: LambdaStack
+    Properties:
+      TemplateURL: !Sub 'https://${S3BucketName}.s3.${AWS::Region}.amazonaws.com/cloudformation/stepfunctions.yaml'
+      Parameters:
+        AppName: !Ref AppName
+        StepFunctionRoleArn: !GetAtt IAMStack.Outputs.StepFunctionRoleArn
+        EventBridgeRoleArn: !GetAtt IAMStack.Outputs.EventBridgeRoleArn
+        GooglePlacesCollectorFunctionArn: !GetAtt LambdaStack.Outputs.GooglePlacesCollectorFunctionArn
+        JsonToHudiFunctionArn: !GetAtt LambdaStack.Outputs.JsonToHudiFunctionArn
+        HudiToParquetFunctionArn: !GetAtt LambdaStack.Outputs.HudiToParquetFunctionArn
+
+Outputs:
+  DataBucketName:
+    Description: Name of the S3 bucket for data storage
+    Value: !GetAtt StorageStack.Outputs.DataBucketName
+
+  GooglePlacesCollectorFunctionArn:
+    Description: ARN of the Places Collector Lambda function
+    Value: !GetAtt LambdaStack.Outputs.GooglePlacesCollectorFunctionArn
+
+  JsonToHudiFunctionArn:
+    Description: ARN of the JSON to Hudi Lambda function
+    Value: !GetAtt LambdaStack.Outputs.JsonToHudiFunctionArn
+
+  HudiToParquetFunctionArn:
+    Description: ARN of the Hudi to Parquet Lambda function
+    Value: !GetAtt LambdaStack.Outputs.HudiToParquetFunctionArn
+
+  StateMachineArn:
+    Description: ARN of the Step Functions state machine
+    Value: !GetAtt StepFunctionsStack.Outputs.StateMachineArn

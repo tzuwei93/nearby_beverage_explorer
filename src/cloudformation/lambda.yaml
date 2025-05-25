@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Nearby Beverage Explorer - Lambda Functions'
+
+Parameters:
+  AppName:
+    Type: String
+    Description: Name prefix for all resources
+  
+  Version:
+    Type: String
+    Description: Version tag for Lambda function container images
+  
+  ECRRepositoryName:
+    Type: String
+    Description: ECR repository for Lambda function container images
+  
+  LambdaExecutionRoleArn:
+    Type: String
+    Description: ARN of the Lambda execution role
+  
+  DataBucketName:
+    Type: String
+    Description: Name of the S3 bucket for data storage
+  
+  LocationLat:
+    Type: String
+    Description: Latitude for beverage search center point
+  
+  LocationLng:
+    Type: String
+    Description: Longitude for beverage search center point
+  
+  SearchRadiusMeters:
+    Type: Number
+    Description: Search radius in meters
+  
+  GoogleMapsApiKey:
+    Type: String
+    NoEcho: true
+    Description: Google Maps API Key for Places API
+
+  RawDataPrefix:
+    Type: String
+    Description: Prefix for raw data storage
+
+  HudiDataPrefix:
+    Type: String
+    Description: Prefix for Hudi data storage
+
+  AnalyticsDataPrefix:
+    Type: String
+    Description: Prefix for analytics data storage
+
+Resources:
+  # Google Places Collector Lambda
+  GooglePlacesCollectorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AppName}-places-collector'
+      PackageType: Image
+      Code:
+        ImageUri: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepositoryName}:google_places_collector-${Version}'
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 900
+      MemorySize: 256
+      Environment:
+        Variables:
+          LOCATION_LAT: !Ref LocationLat
+          LOCATION_LNG: !Ref LocationLng
+          SEARCH_RADIUS_METERS: !Ref SearchRadiusMeters
+          S3_BUCKET_NAME: !Ref DataBucketName
+          GOOGLE_MAPS_API_KEY: !Ref GoogleMapsApiKey
+          RAW_DATA_PREFIX: !Ref RawDataPrefix
+
+  # JSON to Hudi Lambda
+  JsonToHudiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AppName}-json-to-hudi'
+      PackageType: Image
+      Code:
+        ImageUri: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepositoryName}:json_to_hudi-${Version}'
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 900
+      MemorySize: 3008
+      Environment:
+        Variables:
+          LOCATION_LAT: !Ref LocationLat
+          LOCATION_LNG: !Ref LocationLng
+          TARGET_BUCKET: !Ref DataBucketName
+          HUDI_DATA_PREFIX: !Ref HudiDataPrefix
+
+  # Hudi to Parquet Lambda
+  HudiToParquetFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AppName}-hudi-to-parquet'
+      PackageType: Image
+      Code:
+        ImageUri: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepositoryName}:hudi_to_parquet-${Version}'
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 900
+      MemorySize: 3008
+      Environment:
+        Variables:
+          LOCATION_LAT: !Ref LocationLat
+          LOCATION_LNG: !Ref LocationLng
+          TARGET_BUCKET: !Ref DataBucketName
+          ANALYTICS_DATA_PREFIX: !Ref AnalyticsDataPrefix
+
+Outputs:
+  GooglePlacesCollectorFunctionArn:
+    Description: ARN of the Places Collector Lambda function
+    Value: !GetAtt GooglePlacesCollectorFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-GooglePlacesCollectorFunctionArn'
+  
+  JsonToHudiFunctionArn:
+    Description: ARN of the JSON to Hudi Lambda function
+    Value: !GetAtt JsonToHudiFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-JsonToHudiFunctionArn'
+  
+  HudiToParquetFunctionArn:
+    Description: ARN of the Hudi to Parquet Lambda function
+    Value: !GetAtt HudiToParquetFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-HudiToParquetFunctionArn'

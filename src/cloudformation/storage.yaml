@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Nearby Beverage Explorer - Storage Resources'
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Description: S3 bucket for storing application data
+  
+  ECRRepositoryName:
+    Type: String
+    Description: ECR repository for Lambda function container images
+  
+  CreateECRRepository:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Description: Whether to create a new ECR repository
+
+Conditions:
+  ShouldCreateECRRepository: !Equals [!Ref CreateECRRepository, 'true']
+
+Resources:
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${S3BucketName}-data'
+  # ECR Repository for Lambda Container Images
+  LambdaECRRepository:
+    Type: AWS::ECR::Repository
+    Condition: ShouldCreateECRRepository
+    Properties:
+      RepositoryName: !Ref ECRRepositoryName
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: MUTABLE
+      RepositoryPolicyText:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowLambdaPull
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:BatchCheckLayerAvailability
+
+Outputs:
+  DataBucketName:
+    Description: Name of the S3 bucket for data storage
+    Value: !Sub '${S3BucketName}-data'
+    Export:
+      Name: !Sub '${AWS::StackName}-DataBucketName'
+  
+  DataBucketArn:
+    Description: ARN of the S3 bucket for data storage
+    Value: !Sub 'arn:aws:s3:::${S3BucketName}-data'
+    Export:
+      Name: !Sub '${AWS::StackName}-DataBucketArn'
+
+  ECRRepositoryUri:
+    Description: URI of the ECR repository
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepositoryName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ECRRepositoryUri'

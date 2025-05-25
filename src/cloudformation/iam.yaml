@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Nearby Beverage Explorer - IAM Resources'
+
+Parameters:
+  DataBucketArn:
+    Type: String
+    Description: ARN of the S3 bucket for data storage
+  
+  ECRRepositoryName:
+    Type: String
+    Description: Name of the ECR repository for Lambda container images
+  
+  # These parameters will be used in the updated version but are not required for initial deployment
+  # They'll be passed from the main stack after the first deployment cycle
+  GooglePlacesCollectorFunctionArn:
+    Type: String
+    Default: '*'
+    Description: ARN of the Places Collector Lambda function
+  
+  JsonToHudiFunctionArn:
+    Type: String
+    Default: '*'
+    Description: ARN of the JSON to Hudi Lambda function
+  
+  HudiToParquetFunctionArn:
+    Type: String
+    Default: '*'
+    Description: ARN of the Hudi to Parquet Lambda function
+
+Resources:
+  # IAM Role for Lambda Functions
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                Resource:
+                  - !Ref DataBucketArn
+                  - !Sub '${DataBucketArn}/*'
+        - PolicyName: ECRAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetAuthorizationToken
+                Resource: 
+                  - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ECRRepositoryName}'
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+
+  # Step Function Role
+  StepFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeLambdas
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Ref GooglePlacesCollectorFunctionArn
+                  - !Ref JsonToHudiFunctionArn
+                  - !Ref HudiToParquetFunctionArn
+
+  # EventBridge Role for invoking Step Functions
+  EventBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeStepFunctions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource: '*'  # This will be refined after the first deployment
+
+Outputs:
+  LambdaExecutionRoleArn:
+    Description: ARN of the Lambda execution role
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaExecutionRoleArn'
+  
+  StepFunctionRoleArn:
+    Description: ARN of the Step Function role
+    Value: !GetAtt StepFunctionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-StepFunctionRoleArn'
+  
+  EventBridgeRoleArn:
+    Description: ARN of the EventBridge role
+    Value: !GetAtt EventBridgeRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-EventBridgeRoleArn'

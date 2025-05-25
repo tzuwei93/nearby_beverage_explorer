@@ -1,0 +1,91 @@
+[tool.poetry]
+name = "nearby_beverage_explorer"
+version = "0.1.0"
+description = "A Hudi integration project to track nearby beverages"
+authors = []
+readme = "README.md"
+keywords = ["cafe", "beverage", "analytics", "hudi"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+]
+
+[tool.poetry.dependencies]
+python = "3.8.20"
+python-dotenv = "1.0.0"
+requests = "2.31.0"
+pyspark = "3.3.0"
+pyarrow = ">=5.0.0,<9.0.0"
+boto3 = "1.37.38"
+dotenv = "^0.9.9"
+toml = "^0.10.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+black = "^23.7.0"
+isort = "^5.12.0"
+ruff = "^0.1.6"
+pre-commit = "^3.3.3"
+mypy = "^1.5.1"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 150
+target-version = ["py38"]
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 150
+
+[tool.ruff]
+line-length = 88
+target-version = "py38"
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "C",  # flake8-comprehensions
+    "B",  # flake8-bugbear
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*" = ["E501"]
+
+[tool.ruff.isort]
+known-first-party = ["nearby_beverage_explorer"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+disable_error_code = ["no-untyped-def"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --cov=nearby_beverage_explorer --cov-report=term-missing"
+testpaths = [
+    "tests",
+]
