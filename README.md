@@ -144,6 +144,31 @@ This will:
 3. Build and push Docker images for Lambda functions
 4. Deploy the CloudFormation stack with all resources
 
+
+## 📑 Data Modeling Schema
+
+The system implements a streamlined data model with two core tables:
+
+- **店家基本資訊表 (Beverage Basic Info Table)**
+  * unique_id (Primary Key): Stable hash-based identifier (used for internal references)
+  * google_place_id: Original Google Places API identifier (used for external references)
+  * name: Beverage establishment name
+  * address: Full formatted address
+  * latitude: Geographic latitude coordinate
+  * longitude: Geographic longitude coordinate
+  * google_maps_url: Direct link to Google Maps location
+  * rating: the rating at the data updated time (0-5 scale)
+
+  > Note: The column `unique_id` is used for this project to prevent the id from Google API changing, and it is constructed using the latitude, longitude, and name of a beverage establishment in order to ensure uniqueness. When the `google_place_id` changes externally, this website will not be influenced, but there might be duplicate entries of the same establishment due to its name being changed slightly or the value of latitude and longitude changing slightly.
+
+- **店家歷史評分表 (Beverage Historical Ratings Table)**
+  * unique_id (Primary Key): References the unique_id from the Basic Info table
+  * name: the name of the beverage establishment
+  * latitude: Geographic latitude coordinate
+  * longitude: Geographic longitude coordinate
+  * history_ratings: ratings values in JSON format ({date1: rating1, date2: rating2}) from all the commits of the beverage basic info table (Hudi format)
+  * rating_change: calculate the rating changes from now to at most past one month
+
 ## 📊 Data Pipeline
 
 The data pipeline runs weekly (Friday at 6 AM) and consists of three stages:

@@ -25,17 +25,16 @@ def lambda_handler(event, context):
     """
     try:
         # Get configuration from environment variables
-        api_key = os.environ['GOOGLE_MAPS_API_KEY']
-        bucket = os.environ['S3_BUCKET_NAME']
         location_lat = float(os.environ['LOCATION_LAT'])
         location_lng = float(os.environ['LOCATION_LNG'])
+
         # Include lat/lng in the S3 prefix
         raw_prefix = f'{os.environ["RAW_DATA_PREFIX"]}/{location_lat}_{location_lng}'
         radius = int(os.environ['SEARCH_RADIUS_METERS'])
         
         # Initialize clients
-        places_client = GooglePlacesClient(api_key)
-        storage = S3Storage(bucket, raw_prefix)
+        places_client = GooglePlacesClient(os.environ['GOOGLE_MAPS_API_KEY'])
+        storage = S3Storage(os.environ['S3_BUCKET_NAME'], raw_prefix)
         
         # Search for places
         places = places_client.search_nearby_places(
