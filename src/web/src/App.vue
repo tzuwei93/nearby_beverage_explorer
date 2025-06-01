@@ -47,47 +47,43 @@
         <thead>
           <tr>
             <th @click="sort('name')">Name</th>
-            <!-- <th @click="sort('types')">Types</th> -->
-            <th @click="sort('this_week_rating')">This Week Rating</th>
-            <th @click="sort('last_week_rating')">Last Week Rating</th>
-            <th @click="sort('rating_difference')">Rating Difference</th>
-            <th @click="sort('rating_progression')">Rating Progression</th>
-            <!-- <th @click="sort('updated_at')">Updated At</th> -->
+            <th @click="sort('current_rating')">Latest Rating</th>
+            <th @click="sort('latest_change_value')">
+              Latest Change
+              <span
+                class="tooltip-header-icon"
+                @mouseenter="showTooltip($event, 'Hover over values in this column to see detailed rating history')"
+                @mouseleave="hideTooltip()"
+              >ⓘ</span>
+            </th>
+            <th>Location</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="place in filteredPlaces" :key="place.place_id">
-            <td><a :href="place.url" target="_blank">{{ place.name }}</a></td>
-            <!-- <td>{{ formatTypes(place.types) }}</td> -->
+          <tr v-for="place in filteredPlaces" :key="place.unique_id" 
+              class="data-row">
             <td>
-              {{ place.this_week_rating ? place.this_week_rating.toFixed(1) : 'N/A' }}
-              <div class="stars-container" v-if="place.this_week_rating">
-                <div class="stars-filled" :style="{ width: calculateStarPercentage(place.this_week_rating) + '%' }">★★★★★</div>
+              <a :href="place.url" target="_blank" class="maps-link">{{ place.name }}</a>
+            </td>
+            <td>
+              {{ place.current_rating ? place.current_rating.toFixed(1) : 'N/A' }}
+              <div class="stars-container" v-if="place.current_rating">
+                <div class="stars-filled" :style="{ width: calculateStarPercentage(place.current_rating) + '%' }">★★★★★</div>
                 <div class="stars-empty">★★★★★</div>
               </div>
             </td>
-            <td>
-              {{ place.last_week_rating ? place.last_week_rating.toFixed(1) : 'N/A' }}
-              <div class="stars-container" v-if="place.last_week_rating">
-                <div class="stars-filled" :style="{ width: calculateStarPercentage(place.last_week_rating) + '%' }">★★★★★</div>
-                <div class="stars-empty">★★★★★</div>
+            <td :class="[place.latest_change_value ? getRatingChangeClass(place.latest_change_value) : '', 'tooltip-trigger']"
+              @mouseenter="showTooltip($event, place.rating_history_details)"
+              @mouseleave="hideTooltip()">
+              <div v-if="place.latest_change_display">
+                {{ place.latest_change_display }}
+                <br><small class="latest-change-period">{{ place.latest_change_period }}</small>
               </div>
-            </td>
-            <td :class="place.rating_difference ? getRatingChangeClass(place.rating_difference) : ''">
-              {{ formatRatingChange(place.rating_difference) }}
+              <div v-else>-</div>
             </td>
             <td>
-              <div class="progression-chart" v-if="place.rating_progression && Array.isArray(place.rating_progression)">
-                <!-- Visualization of rating progression -->
-                <div v-for="(rating, index) in place.rating_progression" 
-                     :key="index"
-                     :style="{ height: calculateProgressionHeight(rating) + '%' }"
-                     class="progression-bar">
-                </div>
-              </div>
-              <span v-else>No data</span>
+              <small>{{ place.latitude.toFixed(4) }}, {{ place.longitude.toFixed(4) }}</small>
             </td>
-            <!-- <td>{{ formatDate(place.updated_at) }}</td> -->
           </tr>
         </tbody>
       </table>
@@ -97,6 +93,11 @@
 
 <script>
 import { ref, computed, onMounted } from 'vue'
+import { dateUtils, ratingUtils, tooltipUtils, dataUtils } from './utils.js'
+import { dataService } from './dataService.js'
+import { locationService } from './locationService.js'
+import { tableService } from './tableService.js'
+import { exportService } from './exportService.js'
 
 export default {
   name: 'App',
@@ -112,50 +113,20 @@ export default {
     const sortOrder = ref('asc')
     const dataLoadedAt = ref(null)
     
-    // Default locations
-    const defaultLocations = [
-      { latitude: 25.041171, longitude: 121.565227, name: '市政府捷運站' } // City Hall MRT Station
-    ]
-    
     // Access environment variables (works with both Vite and Vue CLI)
     const envVars = import.meta.env || {}
     
-    // Initialize locations from environment variables or use defaults
-    let initialLocations = defaultLocations
-    try {
-      console.log('Environment variables:', envVars)
-      if (envVars.VITE_LOCATIONS) {
-        const parsedLocations = JSON.parse(envVars.VITE_LOCATIONS)
-        if (Array.isArray(parsedLocations) && parsedLocations.length > 0) {
-          initialLocations = parsedLocations
-          console.log('Loaded locations from environment variables:', initialLocations)
-        }
-      }
-    } catch (e) {
-      console.error('Error parsing VITE_LOCATIONS:', e)
-    }
-    
-    // Get AWS region from environment variables or use default
-    const defaultRegion = 'ap-southeast-1'
-    const awsRegion = envVars.VITE_AWS_REGION || defaultRegion
-    // console.log('Using AWS region:', awsRegion)
+    // Initialize locations and AWS configuration
+    const initialLocations = locationService.initializeLocations(envVars)
+    const awsConfig = locationService.getAwsConfig(envVars)
     
     // Location management
     const locations = ref(initialLocations)
-    const selectedLocationIndex = ref(parseInt(localStorage.getItem('selectedLocationIndex') || '0'))
-    
-    // Ensure the selected index is valid
-    if (selectedLocationIndex.value >= locations.value.length) {
-      selectedLocationIndex.value = 0
-      localStorage.setItem('selectedLocationIndex', '0')
-    }
+    const selectedLocationIndex = ref(locationService.getSelectedLocationIndex(locations.value.length))
     
     // Handle location change
     const handleLocationChange = () => {
-      // Save selected location to localStorage
-      localStorage.setItem('selectedLocationIndex', selectedLocationIndex.value.toString())
-      // Reload data with new location
-      loadData()
+      locationService.handleLocationChange(selectedLocationIndex.value, loadData)
     }
 
     const getParquetFile = async (bucketUrl, prefix) => {
@@ -210,34 +181,19 @@ export default {
         loading.value = true
         error.value = null
         
-        const bucketUrl = `https://nearby-beverage-explorer-data.s3.${awsRegion}.amazonaws.com`
-        
         // Get the current selected location
-        const currentLocation = locations.value[selectedLocationIndex.value]
-        const { latitude, longitude, name } = currentLocation
-        console.log(`Using location: ${name || ''} (${latitude}, ${longitude})`)
+        const currentLocation = locationService.getCurrentLocation(locations.value, selectedLocationIndex.value)
         
-        // Create prefix with location information
-        const prefix = `analytics/${latitude}_${longitude}/beverage_establishments/`
-        
-        // Get the parquet file from the bucket
-        const fileKey = await getParquetFile(bucketUrl, prefix)
-        console.log('Found parquet file:', fileKey)
-        
-        // Load the parquet file using Hyparquet
-        const { asyncBufferFromUrl, parquetReadObjects } = await import('hyparquet')
-        const url = `${bucketUrl}/${fileKey}`
-        const file = await asyncBufferFromUrl({ url })
-        
-        // Read the parquet file
-        const data = await parquetReadObjects({
-          file,
-          columns: ['place_id', 'name', 'types', 'url', 'this_week_rating', 'last_week_rating', 'rating_progression', 'rating_difference', 'updated_at']
+        // Load data using the data service
+        const result = await dataService.loadLocationData({
+          s3BucketName: awsConfig.s3BucketName,
+          awsRegion: awsConfig.awsRegion,
+          location: currentLocation
         })
         
-        places.value = data
-        dataLoadedAt.value = places.value[0].updated_at
-        console.log('Loaded data:', data)
+        places.value = result.data
+        dataLoadedAt.value = result.loadedAt
+        console.log('Loaded data:', result.data)
       } catch (err) {
         error.value = 'Failed to load data. Please try again later.'
         console.error('Error loading data:', err)
@@ -247,118 +203,52 @@ export default {
     }
 
     const filteredPlaces = computed(() => {
-      return places.value
-        .filter(place => {
-          // Add null checks for all properties
-          if (!place || !place.name) return false;
-          
-          const matchesSearch = place.name.toLowerCase().includes(searchQuery.value.toLowerCase())
-          const matchesRating = !ratingFilter.value || (place.this_week_rating && place.this_week_rating >= parseFloat(ratingFilter.value))
-          // const matchesType = !typeFilter.value || (place.types && place.types.includes(typeFilter.value))
-          return matchesSearch && matchesRating
-        })
-        .sort((a, b) => {
-          const aVal = a[sortKey.value]
-          const bVal = b[sortKey.value]
-          const modifier = sortOrder.value === 'asc' ? 1 : -1
-          return aVal > bVal ? modifier : -modifier
-        })
+      return tableService.processPlaces(places.value, {
+        searchQuery: searchQuery.value,
+        ratingFilter: ratingFilter.value,
+        sortKey: sortKey.value,
+        sortOrder: sortOrder.value
+      })
     })
 
     const sort = (key) => {
-      if (sortKey.value === key) {
-        sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
-      } else {
-        sortKey.value = key
-        sortOrder.value = 'asc'
-      }
+      tableService.handleSort(key, { sortKey: sortKey.value, sortOrder: sortOrder.value }, (newSortKey, newSortOrder) => {
+        sortKey.value = newSortKey
+        sortOrder.value = newSortOrder
+      })
     }
 
     const formatDate = (timestamp) => {
       if (!timestamp) return 'N/A';
+      
       try {
-        return new Date(timestamp).toLocaleDateString();
+        // Use our unified date parsing and formatting utilities
+        const parsedDate = dateUtils.parseTimestamp(timestamp);
+        return parsedDate.valid ? dateUtils.format(parsedDate.date) : 'Invalid date';
       } catch (e) {
+        console.warn('Error formatting date:', timestamp, e);
         return 'Invalid date';
       }
     }
 
-    const formatRatingChange = (change) => {
-      if (change === undefined || change === null) return '-'
-      return change > 0 ? `+${change.toFixed(1)}` : change.toFixed(1)
-    }
-
-    const getRatingChangeClass = (change) => {
-      if (change === undefined || change === null) return ''
-      return change > 0 ? 'positive-change' : 'negative-change'
-    }
+    // Use the shared calculation function for stars
+    const calculateStarPercentage = (rating) => ratingUtils.calculatePercentage(rating)
     
-    const calculateProgressionHeight = (rating) => {
-      if (rating === undefined || rating === null) return 0
-      // Scale the rating to a percentage (assuming ratings are between 0-5)
-      return Math.min(Math.max(rating * 20, 0), 100)
-    }
-    
-    const calculateStarPercentage = (rating) => {
-      if (rating === undefined || rating === null) return 0
-      // Convert rating (0-5) to percentage (0-100)
-      return Math.min(Math.max(rating * 20, 0), 100)
-    }
+    // For backwards compatibility in component references
+    const getRatingChangeClass = ratingUtils.getChangeClass
+    const formatRatingChange = ratingUtils.formatChange
     
     const formatTypes = (types) => {
-      if (!types) return 'N/A'
-      
-      // Check if types is already a string
-      if (typeof types === 'string') {
-        try {
-          // Try to parse it in case it's a JSON string
-          const parsedTypes = JSON.parse(types)
-          if (Array.isArray(parsedTypes)) {
-            return parsedTypes
-              .map(type => type.charAt(0).toUpperCase() + type.slice(1).replace('_', ' '))
-              .join(', ')
-          }
-          return types
-        } catch (e) {
-          // If it's not valid JSON, return as is
-          return types
-        }
-      }
-      
-      // If types is an array
-      if (Array.isArray(types)) {
-        return types
-          .map(type => type.charAt(0).toUpperCase() + type.slice(1).replace('_', ' '))
-          .join(', ')
-      }
-      
-      // If it's neither a string nor an array, return as string
-      return String(types)
+      return dataUtils.formatTypes(types)
     }
 
     const exportToCsv = () => {
-      const headers = ['Name', 'URL', 'This Week Rating', 'Last Week Rating', 'Rating Difference', 'Rating Progression', 'Updated At']
-      const csvContent = [
-        headers.join(','),
-        ...filteredPlaces.value.map(place => [
-          place.name,
-          place.url,
-          place.this_week_rating || '',
-          place.last_week_rating || '',
-          place.rating_difference || '',
-          place.rating_progression ? JSON.stringify(place.rating_progression) : '',
-          place.updated_at || ''
-        ].join(','))
-      ].join('\n')
-
-      const blob = new Blob([csvContent], { type: 'text/csv' })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `nearby-beverage-explorer-ratings-${new Date().toISOString().split('T')[0]}.csv`
-      a.click()
-      window.URL.revokeObjectURL(url)
+      exportService.exportToCsv(filteredPlaces.value)
     }
+
+    // Use imported tooltip utilities 
+    const showTooltip = tooltipUtils.show;
+    const hideTooltip = tooltipUtils.hide;
 
     onMounted(() => {
       loadData()
@@ -376,7 +266,6 @@ export default {
       formatDate,
       formatRatingChange,
       getRatingChangeClass,
-      calculateProgressionHeight,
       calculateStarPercentage,
       formatTypes,
       exportToCsv,
@@ -384,24 +273,31 @@ export default {
       // Location-related variables
       locations,
       selectedLocationIndex,
-      handleLocationChange
+      handleLocationChange,
+      // Tooltip functions
+      showTooltip,
+      hideTooltip
     }
   }
 }
 </script>
 
 <style>
+/* ===== LAYOUT & CONTAINERS ===== */
 .container {
   max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+/* Header styling */
 header {
   text-align: center;
   margin-bottom: 30px;
 }
 
+/* Location selector */
 .location-selector {
   display: flex;
   align-items: center;
@@ -419,8 +315,11 @@ header {
   border: 1px solid #ddd;
   border-radius: 4px;
   min-width: 300px;
+  background-color: #f8f8f8;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
 }
 
+/* ===== FILTERS & CONTROLS ===== */
 .filters {
   display: flex;
   gap: 15px;
@@ -430,9 +329,11 @@ header {
 .search-input,
 .type-filter,
 .rating-filter {
-  padding: 8px;
+  padding: 8px 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
+  flex: 1;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
 }
 
 .export-btn {
@@ -442,35 +343,78 @@ header {
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  transition: background-color 0.2s;
 }
 
+.export-btn:hover {
+  background-color: #388E3C;
+}
+
+/* ===== TABLE STYLING ===== */
 .table-container {
   overflow-x: auto;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1);
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 20px;
+  overflow: hidden;
 }
 
 th, td {
-  padding: 12px;
+  padding: 14px;
   text-align: left;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid #eee;
 }
 
 th {
-  background-color: #f5f5f5;
+  background-color: #f8f9fa;
   cursor: pointer;
+  font-weight: 600;
+  position: relative;
+  transition: background-color 0.2s;
+  color: #444;
 }
 
+th:hover {
+  background-color: #f0f0f0;
+}
+
+/* Sort indicators */
+th::after {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+th.sort-asc::after {
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 4px solid #666;
+}
+
+th.sort-desc::after {
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid #666;
+}
+
+/* ===== RATING VISUALIZATION ===== */
+/* Star rating display */
 .stars-container {
   position: relative;
   display: inline-block;
-  margin-left: 5px;
+  margin-left: 8px;
   white-space: nowrap;
   line-height: 1;
+  font-size: 1.2em;
 }
 
 .stars-filled {
@@ -480,20 +424,37 @@ th {
   overflow: hidden;
   color: #FFD700;
   z-index: 1;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.1);
 }
 
 .stars-empty {
   color: #e0e0e0;
 }
 
+/* Rating change indicators */
 .positive-change {
   color: #4CAF50;
+  font-weight: bold;
 }
 
 .negative-change {
   color: #f44336;
+  font-weight: bold;
 }
 
+.latest-change-period {
+  color: #777;
+  font-size: 0.85em;
+  margin-top: 5px;
+  font-style: italic;
+  display: inline-block;
+  background-color: rgba(0, 0, 0, 0.03);
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* Status indicators */
 .status {
   padding: 4px 8px;
   border-radius: 12px;
@@ -510,27 +471,13 @@ th {
   color: #C62828;
 }
 
+/* ===== CHARTS & VISUALIZATIONS ===== */
+
 .popular-times {
   display: flex;
   gap: 2px;
   height: 30px;
   align-items: flex-end;
-}
-
-.progression-chart {
-  display: flex;
-  gap: 2px;
-  height: 30px;
-  align-items: flex-end;
-  width: 100%;
-}
-
-.progression-bar {
-  flex: 1;
-  background-color: #4CAF50;
-  min-height: 2px;
-  border-radius: 1px 1px 0 0;
-  transition: height 0.3s ease;
 }
 
 .hour-bar {
@@ -539,25 +486,171 @@ th {
   min-height: 1px;
 }
 
+/* ===== LINKS & INTERACTIONS ===== */
 .maps-link {
   color: #2196F3;
   text-decoration: none;
+  font-weight: 500;
+  display: inline-block;
+  position: relative;
+  transition: color 0.2s;
+  padding-bottom: 2px;
 }
 
 .maps-link:hover {
-  text-decoration: underline;
+  color: #0d47a1;
 }
 
+.maps-link:after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 2px;
+  bottom: 0;
+  left: 0;
+  background-color: #2196F3;
+  transition: width 0.2s;
+}
+
+.maps-link:hover:after {
+  width: 100%;
+}
+
+/* ===== STATE INDICATORS ===== */
 .loading {
   text-align: center;
   padding: 40px;
   font-size: 1.2em;
   color: #666;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
 .error {
   text-align: center;
   padding: 40px;
   color: #f44336;
+  background-color: #ffebee;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
-</style> 
+
+/* ===== TOOLTIP STYLING ===== */
+.rating-tooltip {
+  position: absolute;
+  background-color: #333;
+  color: white;
+  padding: 15px;
+  border-radius: 8px;
+  font-size: 0.9em;
+  line-height: 1.8;
+  max-width: 350px;
+  box-shadow: 0 3px 15px rgba(0,0,0,0.3);
+  z-index: 1000;
+  pointer-events: none;
+  animation: tooltip-fade-in 0.2s ease-out;
+}
+
+.rating-tooltip::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 20px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 8px solid #333;
+}
+
+/* Tooltip content structure */
+.tooltip-title,
+.tooltip-subtitle {
+  text-align: center;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+.tooltip-title {
+  font-weight: bold;
+  font-size: 1.1em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.tooltip-subtitle {
+  font-size: 0.9em;
+  color: #cccccc;
+  font-style: italic;
+  border-bottom: 1px dotted rgba(255, 255, 255, 0.1);
+}
+
+.tooltip-content {
+  margin-top: 10px;
+}
+
+.tooltip-date {
+  font-weight: 500;
+  color: #f0f0f0;
+  display: inline-block;
+  min-width: 140px;
+  background-color: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.tooltip-rating {
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 3px;
+  min-width: 40px;
+  display: inline-block;
+  text-align: center;
+}
+
+/* Rating color classes */
+.excellent-rating { background-color: #4CAF50; color: white; }
+.good-rating { background-color: #8BC34A; color: white; }
+.average-rating { background-color: #FFC107; color: #333; }
+.poor-rating { background-color: #F44336; color: white; }
+
+/* Tooltip triggers and indicators */
+.tooltip-header-icon {
+  font-size: 0.8em;
+  color: #4a89dc;
+  cursor: default;
+  margin-left: 5px;
+  opacity: 0.8;
+  background-color: rgba(74, 137, 220, 0.1);
+  padding: 2px 6px;
+  border-radius: 50%;
+  border: 1px solid rgba(74, 137, 220, 0.2);
+}
+
+.tooltip-trigger {
+  cursor: default;
+  position: relative;
+}
+
+.tooltip-trigger:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.tooltip-trigger::after {
+  content: "ⓘ";
+  font-size: 0.7em;
+  opacity: 0.6;
+  margin-left: 4px;
+  vertical-align: super;
+}
+
+/* ===== ROW INTERACTIONS ===== */
+.data-row {
+  transition: background-color 0.2s ease;
+}
+
+.data-row:hover {
+  background-color: #f5f9ff;
+}
+</style>
