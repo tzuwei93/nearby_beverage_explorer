@@ -1,11 +1,7 @@
 import os
-import boto3
 import json
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType, FloatType, TimestampType, ArrayType, MapType, DoubleType
-from datetime import datetime
 from pyspark.sql import functions as F
-from typing import Optional
 
 
 def generate_stable_unique_id(df, name_col="name", lat_col="latitude", lng_col="longitude"):
@@ -84,7 +80,6 @@ def create_basic_info_table(spark: SparkSession, enriched_df, output_path: str):
     basic_info_table_options = {
         'hoodie.table.name': 'beverage_basic_info_table',
         'hoodie.datasource.write.recordkey.field': 'unique_id',
-        'hoodie.datasource.write.partitionpath.field': '',
         'hoodie.datasource.write.table.name': 'beverage_basic_info_table',
         'hoodie.datasource.write.operation': 'upsert',
         "hoodie.write.markers.type": "direct",
