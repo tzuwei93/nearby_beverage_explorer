@@ -1,7 +1,8 @@
-from datetime import datetime, timedelta
 import os
 import json
+import traceback
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 
 
 def init_spark():
@@ -24,6 +25,13 @@ def init_spark():
         .config("spark.hadoop.fs.s3a.session.token",session_token) \
         .config("spark.hadoop.fs.s3a.aws.credentials.provider","org.apache.hadoop.fs.s3a.TemporaryAWSCredentialsProvider") \
         .getOrCreate()
+
+
+def convert_to_s3a(s3_path: str) -> str:
+    """Convert s3:// paths to s3a:// for Spark compatibility"""
+    if s3_path.startswith('s3://'):
+        return s3_path.replace('s3://', 's3a://', 1)
+    return s3_path
 
 
 def get_hudi_commits(spark: SparkSession, input_path: str) -> list:
@@ -68,114 +76,171 @@ def get_hudi_commits(spark: SparkSession, input_path: str) -> list:
     return commit_timestamps
 
 
-def get_earliest_commit_timestamp(spark: SparkSession, input_path: str) -> str:
-    """Get the earliest commit timestamp from a Hudi table
+def create_ratings_cols(result_df):
+    """Convert wide format to JSON ratings and calculate rating change
+    
+    Transforms rating columns in wide format (rating_20230101xxxx, rating_20230102xxxx...)
+    into a JSON string with format {date1: rating1, date2: rating2} for the history_ratings field
+    and calculates the rating change between the most recent and previous rating.
     
     Args:
-        spark: SparkSession instance
-        input_path: Path to the Hudi table
+        result_df: DataFrame with rating_* columns for different timestamps
         
     Returns:
-        str: The earliest commit timestamp in the format 'yyyyMMddHHmmss'
-             or empty string if no commits are found
+        DataFrame with unique_id, history_ratings, and rating_change
     """
-    commits = get_hudi_commits(spark, input_path)
+    date_columns = [col for col in result_df.columns if col.startswith("rating_")]
     
-    if not commits:
-        return ""
+    if not date_columns:
+        raise ValueError("No rating columns found in the DataFrame")
     
-    earliest_ts = commits[0]
-    print(f"Original Hudi timestamp: {earliest_ts}")
+    # Create JSON map with original commit timestamps as keys
+    map_pairs = []
+    for col in date_columns:
+        # Keep the original commit timestamp format from Hudi
+        timestamp = col.replace("rating_", "")
+        map_pairs.extend([F.lit(timestamp), F.col(col)])
     
-    return str(earliest_ts)
+    # Create base DataFrame with history_ratings
+    base_result = result_df.select(
+        F.col("unique_id"),
+        F.to_json(
+            F.map_filter(
+                F.create_map(*map_pairs),
+                lambda k, v: v.isNotNull()
+            )
+        ).alias("history_ratings")
+    )
+    
+    # Calculate rating change if we have at least 2 rating columns
+    if len(date_columns) < 2:
+        return base_result.withColumn("rating_change", F.lit(0.0))
+    
+    # Sort by timestamp (strings sort chronologically) - most recent first
+    sorted_cols = sorted(date_columns, 
+                        key=lambda x: x.replace("rating_", ""), 
+                        reverse=True)
+    
+    most_recent_col = sorted_cols[0]
+    previous_col = sorted_cols[1]
+    
+    # Add rating change calculation
+    return base_result.join(
+        result_df.select("unique_id", most_recent_col, previous_col),
+        on="unique_id",
+        how="left"
+    ).withColumn(
+        "rating_change",
+        F.when(
+            F.col(most_recent_col).isNotNull() & F.col(previous_col).isNotNull(),
+            F.col(most_recent_col) - F.col(previous_col)
+        ).otherwise(F.lit(0.0))
+    ).select("unique_id", "history_ratings", "rating_change", "name", "latitude", "longitude", "google_maps_url")
 
 
-def process_hudi_to_parquet(spark: SparkSession, input_path: str, output_path: str, this_week_ts: str, last_week_ts: str) -> None:
-    """Process Hudi table to Parquet format with time travel queries for rating comparison
+def reconstruct_rating_history_from_hudi(spark: SparkSession, basic_info_table_path: str):
+    """Reconstruct rating history using Hudi time travel on the basic info table
+    
+    According to the PRD, Hudi time travel capability is used to construct rating history 
+    over time using the beverage basic info table. This function:
+    1. Gets all commit timestamps from the basic info table
+    2. For each commit, reads the ratings as of that timestamp
+    3. Joins all these snapshots into a wide DataFrame
+    4. Converts the rating snapshots into JSON format
+    5. Calculates rating changes between the most recent and previous ratings
     
     Args:
         spark: SparkSession instance
-        input_path: Path to the Hudi table (will be converted to s3a:// if needed)
-        output_path: Path where the Parquet output will be written
-        this_week_ts: Current week's timestamp
-        last_week_ts: Last week's timestamp
+        basic_info_table_path: Path to the beverage_basic_info_table
+        
+    Returns:
+        DataFrame with unique_id, name, latitude, longitude, history_ratings (JSON), and rating_change,
+        or None if reconstruction failed
     """
-    # Get all commits from the Hudi table
-    commits = get_hudi_commits(spark, input_path)
-    
-    if not commits:
-        print("No commits found in the Hudi table. Cannot proceed.")
-        return
+    try:
+        # Get commits from the basic info table (which contains rating data)
+        commits = get_hudi_commits(spark, basic_info_table_path)
+        if not commits:
+            raise ValueError("No commits found in the basic info table")
+        
+        print(f"Found {len(commits)} commits")
+        
+        # Get base DataFrame with unique IDs from the latest basic info table
+        try:
+            basic_info_df = spark.read.format("hudi").load(basic_info_table_path)
+            base_df = basic_info_df.select("unique_id", "name", "latitude", "longitude", "google_maps_url")
+            # print(f"Using {base_df.count()} unique IDs from basic info table")
+        except Exception as e:
+            raise ValueError("Failed to read basic info table")
+            
+        # Join each commit as a column
+        result_df = base_df
+        for i, commit_ts in enumerate(commits):
+            try:
+                historical_df = spark.read.format("hudi") \
+                    .option("as.of.instant", commit_ts) \
+                    .load(basic_info_table_path)
+                
+                commit_df = historical_df.select(
+                    "unique_id",
+                    F.col("rating").alias(f"rating_{commit_ts}")
+                ).filter(F.col("rating").isNotNull())
+                
+                result_df = result_df.join(commit_df, on="unique_id", how="left")
+                print(f"Processed commit {i+1}/{len(commits)}")
+                
+            except Exception as e:
+                print(f"Error reading commit {commit_ts}: {str(e)}")
+                continue
+        
+        # Convert to JSON format for history_ratings and calculate rating change
+        final_df = create_ratings_cols(result_df)
+        
+        print("Successfully reconstructed rating history from basic info table")
+        return final_df
+        
+    except Exception as e:
+        print(f"Error reconstructing rating history: {str(e)}")
+        traceback.print_exc()
+        return None
 
-    # Read current week's data
-    this_week_df = spark.read.format("hudi") \
-        .option("as.of.instant", this_week_ts) \
-        .load(input_path)
-    
-    # Read last week's data
-    last_week_df = spark.read.format("hudi") \
-        .option("as.of.instant", last_week_ts) \
-        .load(input_path)
 
-    # Verify data was loaded, if not using the latest commit
-    if this_week_df.count() == 0:
-        print(f"Warning: timestamp this week ({this_week_ts}) results in empty data.")
-        # Try using the latest commit if different from current timestamp
-        if commits[-1] != this_week_ts:
-            print(f"Trying latest commit {commits[-1]} instead.")
-            this_week_df = spark.read.format("hudi") \
-                .option("as.of.instant", commits[-1]) \
-                .load(input_path)
+def process_hudi_to_parquet(spark: SparkSession, input_path: str, output_path: str):
+    """Process Hudi tables to analytics parquet files
     
-    # Verify data was loaded, if not using the earliest commit
-    if last_week_df.count() == 0:
-        print(f"Warning: timestamp last week ({last_week_ts}) results in empty data.")
-        # Try using the second latest commit if different from last week timestamp
-        if commits[0] != last_week_ts:
-            print(f"Trying earliest commit {commits[0]} instead.")
-            last_week_df = spark.read.format("hudi") \
-                .option("as.of.instant", commits[0]) \
-                .load(input_path)
+    This function uses time travel to reconstruct the full history of ratings for each
+    beverage shop using the basic info table, and then creates the historical ratings table 
+    according to the data model.
     
-    # Register temporary views for SQL queries
-    this_week_df.createOrReplaceTempView("this_week_ratings")
-    last_week_df.createOrReplaceTempView("last_week_ratings")
-
-    # Show the dataframes
-    print(f"Current data (timestamp {this_week_ts}):")
-    this_week_df.show()
-    print(f"Previous data (timestamp {last_week_ts}):")
-    last_week_df.show()
-
-    # Perform comparison analysis using SQL
-    comparison_df = spark.sql("""
-        SELECT 
-            t.place_id,
-            t.name,
-            t.types,
-            t.url,
-            t.rating as this_week_rating,
-            l.rating as last_week_rating,
-            CONCAT(t.rating, ' -> ', l.rating) as rating_progression,
-            (t.rating - l.rating) as rating_difference,
-            current_timestamp() as updated_at
-        FROM this_week_ratings t
-        LEFT JOIN last_week_ratings l
-        ON t.place_id = l.place_id
-    """)
-    
-    # Write the comparison results to parquet
-    comparison_df.write \
-        .mode("overwrite") \
-        .parquet(output_path)
-    
-    # Print some statistics
-    print("Rating Change Analysis:")
-    comparison_df.show()
+    Args:
+        spark: SparkSession instance
+        input_path: Path to Hudi tables
+        output_path: Path to write analytics parquet files
+    """
+    try:
+        # Path to basic info table (which contains rating data)
+        basic_info_table_path = f"{input_path}/beverage_basic_info_table"
+        
+        # Reconstruct rating history using time travel on basic info table
+        rating_history_df = reconstruct_rating_history_from_hudi(spark, basic_info_table_path)
+        
+        if rating_history_df is None:
+            print("Failed to reconstruct rating history")
+            return
+        
+        # Write to parquet
+        rating_history_df.write.mode("overwrite").parquet(output_path)
+        print(f"Successfully wrote {rating_history_df.count()} records to analytics parquet at {output_path}")
+        
+    except Exception as e:
+        print(f"Error processing Hudi to parquet: {str(e)}")
+        traceback.print_exc()
+        raise e
 
 
 def extract_s3_path(event):
     """Extract Hudi path from event body and convert to s3a format if needed"""
+
     if isinstance(event, str):
         event = json.loads(event)
     
@@ -194,49 +259,28 @@ def extract_s3_path(event):
     raise ValueError("No data_path found in event")
 
 
-def convert_to_s3a(s3_path: str) -> str:
-    """Convert s3:// paths to s3a:// for Spark compatibility
-    
-    Args:
-        s3_path: S3 path that may start with s3:// or s3a://
-        
-    Returns:
-        str: Path with s3a:// protocol for Spark compatibility
-    """
-    if s3_path.startswith('s3://'):
-        return s3_path.replace('s3://', 's3a://', 1)
-    return s3_path
-
-
 def lambda_handler(event, context):
     """Lambda handler function"""
     try:
-        print(f"Received event: {json.dumps(event)}")  # Log the event for debugging
+        print(f"Received event: {json.dumps(event)}")
         
-        # Get parameters from event
-        hudi_path = extract_s3_path(event)
+        # Extract paths
+        input_path = extract_s3_path(event)
         target_bucket = os.environ['TARGET_BUCKET']
+        location_lat = os.environ.get('LOCATION_LAT')
+        location_lng = os.environ.get('LOCATION_LNG')
         
-        # Get location coordinates from environment variables
-        location_lat = os.environ.get('LOCATION_LAT', '0.0')
-        location_lng = os.environ.get('LOCATION_LNG', '0.0')
+        target_path = f"s3a://{target_bucket}/{os.environ['ANALYTICS_DATA_PREFIX']}/{location_lat}_{location_lng}/beverage_analytics"
         
-        # Include lat/lng in the S3 prefix
-        target_path = f"s3a://{target_bucket}/{os.environ['ANALYTICS_DATA_PREFIX']}/{location_lat}_{location_lng}/beverage_establishments"
-        
-        # Initialize Spark
-        spark = init_spark()
-
         # Process data
+        spark = init_spark()
+        
         process_hudi_to_parquet(
             spark, 
-            hudi_path, 
+            input_path, 
             target_path,
-            this_week_ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3], 
-            last_week_ts = (datetime.now() - timedelta(minutes=7*24*60)).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
         )
         
-        # Stop Spark session
         spark.stop()
         
         return {
@@ -246,9 +290,9 @@ def lambda_handler(event, context):
                 's3_location': target_path,
             })
         }
+        
     except Exception as e:
         print(f"Error: {str(e)}")
-        import traceback
         traceback.print_exc()
         return {
             'statusCode': 500,

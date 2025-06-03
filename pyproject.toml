@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nearby_beverage_explorer"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Hudi integration project to track nearby beverages"
 authors = []
 readme = "README.md"

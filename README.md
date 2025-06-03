@@ -144,6 +144,31 @@ This will:
 3. Build and push Docker images for Lambda functions
 4. Deploy the CloudFormation stack with all resources
 
+
+## 📑 Data Modeling Schema
+
+The system implements a streamlined data model with two core tables:
+
+- **店家基本資訊表 (Beverage Basic Info Table)**
+  * unique_id (Primary Key): Stable hash-based identifier (used for internal references)
+  * google_place_id: Original Google Places API identifier (used for external references)
+  * name: Beverage establishment name
+  * address: Full formatted address
+  * latitude: Geographic latitude coordinate
+  * longitude: Geographic longitude coordinate
+  * google_maps_url: Direct link to Google Maps location
+  * rating: the rating at the data updated time (0-5 scale)
+
+  > Note: The column `unique_id` is used for this project to prevent the id from Google API changing, and it is constructed using the latitude, longitude, and name of a beverage establishment in order to ensure uniqueness. When the `google_place_id` changes externally, this website will not be influenced, but there might be duplicate entries of the same establishment due to its name being changed slightly or the value of latitude and longitude changing slightly.
+
+- **店家歷史評分表 (Beverage Historical Ratings Table)**
+  * unique_id (Primary Key): References the unique_id from the Basic Info table
+  * name: the name of the beverage establishment
+  * latitude: Geographic latitude coordinate
+  * longitude: Geographic longitude coordinate
+  * history_ratings: ratings values in JSON format ({date1: rating1, date2: rating2}) from all the commits of the beverage basic info table (Hudi format)
+  * rating_change: calculate the rating changes from now to at most past one month
+
 ## 📊 Data Pipeline
 
 The data pipeline runs weekly (Friday at 6 AM) and consists of three stages:
@@ -164,6 +189,33 @@ The data pipeline runs weekly (Friday at 6 AM) and consists of three stages:
 ### S3 Bucket
 
 The S3 bucket is used to store the raw data, Hudi tables, and Parquet files. The bucket is created by the CloudFormation stack and is named `nearby-beverage-explorer-data`.
+
+#### CORS Configuration for S3 Bucket
+
+When accessing the S3 bucket from a web browser (especially during local development), you might encounter CORS (Cross-Origin Resource Sharing) issues. The following script can be used to configure CORS for your S3 bucket:
+
+```bash
+# Configure CORS for a specific bucket and region
+./scripts/apply_cors_to_s3.sh --bucket nearby-beverage-explorer-ut-data \
+                              --region ap-southeast-1 \
+                              --prefix analytics/25.041171_121.565227/beverage_analytics/ \
+                              --allow-cors-from-all
+```
+
+You can also make the bucket publicly accessible (use with caution):
+
+```bash
+# Configure CORS and make the bucket public
+./scripts/apply_cors_to_s3.sh --bucket nearby-beverage-explorer-ut-data \
+                              --region ap-southeast-1 \
+                              --prefix analytics/25.041171_121.565227/beverage_analytics/ \
+                              --allow-cors-from-all \
+                              --allow-public
+```
+
+This script helps resolve CORS issues when developing locally and accessing the S3 bucket directly from your web application. The script will prompt for confirmation before applying changes and display a summary of applied changes when complete.
+
+#### S3 Bucket Structure
 
 ```plain
 ~/dev1/nearby_food_explorer main ?27 ❯ aws s3 ls s3://nearby-beverage-explorer-data/ --recursive                                                                         
@@ -211,12 +263,15 @@ The S3 bucket is used to store the raw data, Hudi tables, and Parquet files. The
 
 ```
 
+
+
 ## 🖥️ Web Application
 
 The web application provides an interactive interface to explore beverage establishments:
 
 - **Search & Filter**: Find establishments by name or rating
-- **Rating Comparison**: Compare current ratings with previous weeks
+- **Rating Changes**: Compare current ratings with previous ones
+- **Rating History**: demonstrate ratings
 - **Export**: Export data to CSV for further analysis
 
 To run the web application locally:
@@ -268,12 +323,6 @@ nearby_beverage_explorer/
 └── .env.example               # Example environment variables
 ```
 
-## 🔄 CI/CD
-
-The project uses GitHub Actions for continuous integration and deployment:
-
-- **CI Pipeline**: Runs tests, linting, and type checking on pull requests
-- **CD Pipeline**: Deploys to AWS on merges to main branch
 
 ## 📝 License
 

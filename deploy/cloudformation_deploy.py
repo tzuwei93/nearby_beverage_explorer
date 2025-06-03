@@ -27,7 +27,13 @@ from src.config import (
     SEARCH_RADIUS_METERS,
     RAW_DATA_PREFIX,
     HUDI_DATA_PREFIX,
-    ANALYTICS_DATA_PREFIX
+    ANALYTICS_DATA_PREFIX,
+    STACK_NAME,
+    TEMPLATE_DIR,
+    MAIN_TEMPLATE_FILE,
+    ECR_REPOSITORY_NAME,
+    LAMBDA_SERVICES_TO_BUILD,
+    CLOUDFORMATION_S3_PREFIX
 )
 
 from modules import (
@@ -36,15 +42,6 @@ from modules import (
     CloudFormationManager,
     S3Manager
 )
-
-# Default values
-STACK_NAME = "nearby-beverage-explorer"
-TEMPLATE_DIR = "src/cloudformation"
-MAIN_TEMPLATE_FILE = f"{TEMPLATE_DIR}/serverless.yaml"
-ECR_REPOSITORY_NAME = STACK_NAME
-DATA_BUCKET = f"{S3_BUCKET_NAME}-data"
-LAMBDA_SERVICES_TO_BUILD = ["google_places_collector", "json_to_hudi", "hudi_to_parquet"]
-CLOUDFORMATION_S3_PREFIX = "cloudformation"
 
 def parse_arguments():
     """Parse command-line arguments"""

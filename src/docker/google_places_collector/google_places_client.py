@@ -101,7 +101,8 @@ class GooglePlacesClient:
         params = {
             "place_id": place_id,
             "key": self.api_key,
-            "fields": "name,formatted_address,website,rating,reviews,url"
+            "language": "zh-TW",
+            "fields": "name,formatted_address,geometry,rating,url"
         }
         
         try:
