@@ -190,6 +190,33 @@ The data pipeline runs weekly (Friday at 6 AM) and consists of three stages:
 
 The S3 bucket is used to store the raw data, Hudi tables, and Parquet files. The bucket is created by the CloudFormation stack and is named `nearby-beverage-explorer-data`.
 
+#### CORS Configuration for S3 Bucket
+
+When accessing the S3 bucket from a web browser (especially during local development), you might encounter CORS (Cross-Origin Resource Sharing) issues. The following script can be used to configure CORS for your S3 bucket:
+
+```bash
+# Configure CORS for a specific bucket and region
+./scripts/apply_cors_to_s3.sh --bucket nearby-beverage-explorer-ut-data \
+                              --region ap-southeast-1 \
+                              --prefix analytics/25.041171_121.565227/beverage_analytics/ \
+                              --allow-cors-from-all
+```
+
+You can also make the bucket publicly accessible (use with caution):
+
+```bash
+# Configure CORS and make the bucket public
+./scripts/apply_cors_to_s3.sh --bucket nearby-beverage-explorer-ut-data \
+                              --region ap-southeast-1 \
+                              --prefix analytics/25.041171_121.565227/beverage_analytics/ \
+                              --allow-cors-from-all \
+                              --allow-public
+```
+
+This script helps resolve CORS issues when developing locally and accessing the S3 bucket directly from your web application. The script will prompt for confirmation before applying changes and display a summary of applied changes when complete.
+
+#### S3 Bucket Structure
+
 ```plain
 ~/dev1/nearby_food_explorer main ?27 ❯ aws s3 ls s3://nearby-beverage-explorer-data/ --recursive                                                                         
 
@@ -236,12 +263,15 @@ The S3 bucket is used to store the raw data, Hudi tables, and Parquet files. The
 
 ```
 
+
+
 ## 🖥️ Web Application
 
 The web application provides an interactive interface to explore beverage establishments:
 
 - **Search & Filter**: Find establishments by name or rating
-- **Rating Comparison**: Compare current ratings with previous weeks
+- **Rating Changes**: Compare current ratings with previous ones
+- **Rating History**: demonstrate ratings
 - **Export**: Export data to CSV for further analysis
 
 To run the web application locally:
@@ -293,12 +323,6 @@ nearby_beverage_explorer/
 └── .env.example               # Example environment variables
 ```
 
-## 🔄 CI/CD
-
-The project uses GitHub Actions for continuous integration and deployment:
-
-- **CI Pipeline**: Runs tests, linting, and type checking on pull requests
-- **CD Pipeline**: Deploys to AWS on merges to main branch
 
 ## 📝 License
 
