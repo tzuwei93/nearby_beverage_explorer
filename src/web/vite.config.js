@@ -5,14 +5,14 @@ import { resolve } from 'path'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [vue()],
-  base: '/nearby-beverage-explorer/', // GitHub Pages repository name
+  base: '/nearby_beverage_explorer/', // GitHub Pages repository name
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src')
     }
   },
   build: {
-    outDir: 'dist',
+    outDir: '../../docs',
     assetsDir: 'assets',
     rollupOptions: {
       input: {

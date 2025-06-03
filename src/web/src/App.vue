@@ -12,7 +12,7 @@
       </div>
       <p>
         Powered by Apache Hudi <a href="https://hudi.apache.org/docs/quick-start-guide/#timetravel" target="_blank" rel="noopener noreferrer">
-          Time Travel Queries</a>, Google Map API, AWS Lambda, Step Functions, S3, Vue.js, Hyparquet.js
+          Time Travel Queries</a>, Google Map API, AWS Lambda, Step Functions, S3, Vue.js, Hyparquet.js 
       </p>
     </header>
 
