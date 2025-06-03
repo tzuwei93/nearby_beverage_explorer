@@ -14,7 +14,6 @@
         Powered by Apache Hudi <a href="https://hudi.apache.org/docs/quick-start-guide/#timetravel" target="_blank" rel="noopener noreferrer">
           Time Travel Queries</a>, Google Map API, AWS Lambda, Step Functions, S3, Vue.js, Hyparquet.js
       </p>
-      <p>Data last loaded: {{ formatDate(dataLoadedAt) }}</p>
     </header>
 
     <div class="filters">
@@ -111,7 +110,6 @@ export default {
     const ratingFilter = ref('')
     const sortKey = ref('name')
     const sortOrder = ref('asc')
-    const dataLoadedAt = ref(null)
     
     // Access environment variables (works with both Vite and Vue CLI)
     const envVars = import.meta.env || {}
@@ -192,7 +190,6 @@ export default {
         })
         
         places.value = result.data
-        dataLoadedAt.value = result.loadedAt
         console.log('Loaded data:', result.data)
       } catch (err) {
         error.value = 'Failed to load data. Please try again later.'
@@ -269,7 +266,6 @@ export default {
       calculateStarPercentage,
       formatTypes,
       exportToCsv,
-      dataLoadedAt,
       // Location-related variables
       locations,
       selectedLocationIndex,

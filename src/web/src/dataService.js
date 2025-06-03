@@ -152,7 +152,6 @@ export const dataService = {
       
       return {
         data: processedData,
-        loadedAt: new Date().toISOString(),
         fileKey,
         location
       }
