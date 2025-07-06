@@ -104,6 +104,10 @@ def create_ratings_cols(result_df):
     # Create base DataFrame with history_ratings
     base_result = result_df.select(
         F.col("unique_id"),
+        F.col("name"),
+        F.col("latitude"),
+        F.col("longitude"),
+        F.col("google_maps_url"),
         F.to_json(
             F.map_filter(
                 F.create_map(*map_pairs),
