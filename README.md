@@ -15,12 +15,8 @@ A comprehensive data pipeline and web application for tracking and analyzing bev
 - [Web Application](#web-application)
 - [Testing](#testing)
 - [Project Structure](#project-structure)
-- [CI/CD](#ci-cd)
-- [License](#license)
-- [Acknowledgements](#acknowledgements)
-- [Debugging buggy issues](#debugging-buggy-issues)
 
-## 🌟 Features
+## Features
 
 - **Automated Data Collection**: Weekly collection of beverage establishment data from Google Places API
 - **Time-Travel Analytics**: Track rating changes over time using Apache Hudi
@@ -28,7 +24,7 @@ A comprehensive data pipeline and web application for tracking and analyzing bev
 - **Modern Web Interface**: Interactive UI for exploring and filtering beverage establishments
 - **Rating Trend Visualization**: Visual representation of rating changes and progression
 
-## 🏗️ Architecture
+## Architecture
 
 The project uses a serverless, event-driven architecture:
 
@@ -47,7 +43,7 @@ The project uses a serverless, event-driven architecture:
    - Hyparquet for client-side Parquet parsing
    - Hosted on S3/CloudFront
 
-## 🔧 Technology Stack
+## Technology Stack
 
 - **Backend**:
   - Python 3.8
@@ -68,7 +64,7 @@ The project uses a serverless, event-driven architecture:
   - AWS ECR
   - AWS S3
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -145,7 +141,7 @@ This will:
 4. Deploy the CloudFormation stack with all resources
 
 
-## 📑 Data Modeling Schema
+## Data Modeling Schema
 
 The system implements a streamlined data model with two core tables:
 
@@ -169,7 +165,7 @@ The system implements a streamlined data model with two core tables:
   * history_ratings: ratings values in JSON format ({date1: rating1, date2: rating2}) from all the commits of the beverage basic info table (Hudi format)
   * rating_change: calculate the rating changes from now to at most past one month
 
-## 📊 Data Pipeline
+## Data Pipeline
 
 The data pipeline runs weekly (Friday at 6 AM) and consists of three stages:
 
@@ -265,7 +261,7 @@ This script helps resolve CORS issues when developing locally and accessing the 
 
 
 
-## 🖥️ Web Application
+## Web Application
 
 The web application provides an interactive interface to explore beverage establishments:
 
@@ -282,7 +278,7 @@ npm install
 npm run dev
 ```
 
-## 🧪 Testing
+## Testing
 
 Run the test suite:
 
@@ -298,7 +294,7 @@ export $(grep -v '^#' .env | xargs) && pytest tests/* -o log_cli=true -vvv tests
 export $(grep -v '^#' .env | xargs) && pytest -m integration -o log_cli=true -vvv tests/*
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 nearby_beverage_explorer/
@@ -322,18 +318,3 @@ nearby_beverage_explorer/
 ├── tests/                     # Test suite
 └── .env.example               # Example environment variables
 ```
-
-
-## 📝 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙏 Acknowledgements
-
-- Google Places API for establishment data
-- Apache Hudi for time-travel data capabilities
-- AWS for serverless infrastructure
-
-
-## Debugging buggy issues
-
