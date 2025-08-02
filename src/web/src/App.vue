@@ -70,7 +70,7 @@
               Rating Difference
               <span
                 class="tooltip-header-icon"
-                @mouseenter="showTooltip($event, 'Shows the difference between the highest and lowest ratings in the past 6 months. The value is calculated as (highest - lowest). And also the latest rating will be presented.')"
+                @mouseenter="showTooltip($event, 'Shows the difference between the highest and lowest ratings in the past 6 months. The value is calculated as (highest - lowest). Additionally, the first and latest rating in the past 6 months will be presented.')"
                 @mouseleave="hideTooltip()"
               >ⓘ</span>
             </th>
