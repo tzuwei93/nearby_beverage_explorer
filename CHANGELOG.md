@@ -8,12 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.2] - 2025-08-02
 
 ### Changed
-- Web ui modifications
+- Web UI modifications
     - Renamed "Latest Change" to "Rating Difference" for clarity
-    - Updated rating difference calculation to show the difference between highest and lowest ratings in the past 6 months, and the rating history shows the highest, lowest, and latest ratings in the past 6 months
+    - Refactored rating difference calculation to show more meaningful comparisons:
+        - Now shows latest rating minus lowest rating (if latest > lowest)
+        - Or latest rating minus highest rating (if latest < highest)
+        - Or 0 if no meaningful difference
+    - Limited rating history to show only highest, lowest, latest, and first ratings from the past 6 months
     - Added pagination to the data table (5 rows per page)
-    - Improved tooltips to better explain the rating difference calculation
-    - Enhanced the footer with GitHub repository link
+    - Enhanced tooltips to clearly explain the rating difference calculation
+    - Improved sign handling for rating differences (shows + for increases, - for decreases)
+    - Implemented absolute value sorting for the rating difference column
+    - Added GitHub repository link in the footer
 
 ## [0.1.1]
 
