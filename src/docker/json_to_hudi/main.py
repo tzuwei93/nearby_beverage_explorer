@@ -80,6 +80,7 @@ def create_basic_info_table(spark: SparkSession, enriched_df, output_path: str):
     basic_info_table_options = {
         'hoodie.table.name': 'beverage_basic_info_table',
         'hoodie.datasource.write.recordkey.field': 'unique_id',
+        'hoodie.datasource.write.precombine.field': 'unique_id',
         'hoodie.datasource.write.table.name': 'beverage_basic_info_table',
         'hoodie.datasource.write.operation': 'upsert',
         "hoodie.write.markers.type": "direct",

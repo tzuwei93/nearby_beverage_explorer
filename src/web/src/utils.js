@@ -157,46 +157,101 @@ export const ratingUtils = {
     // Initialize result object
     const result = {
       currentRating: null,
-      latestChangeValue: null,
-      latestChangeDisplay: null,
-      latestChangePeriod: null,
+      ratingRangeValue: null,
+      ratingRangeDisplay: null,
+      ratingRangePeriod: null,
       ratingHistoryDetails: ''
     };
     
-    // Process rating data based on available history
-    if (timestamps.length > 1) {
-      // Get the most recent rating
-      result.currentRating = historyObj[timestamps[timestamps.length - 1]];
-      
-      // Get the previous rating
-      const previousRating = historyObj[timestamps[timestamps.length - 2]];
-      
-      // Calculate latest change
-      if (previousRating !== null && result.currentRating !== null) {
-        result.latestChangeValue = result.currentRating - previousRating;
-        result.latestChangeDisplay = result.latestChangeValue > 0 
-          ? `+${result.latestChangeValue.toFixed(1)}` 
-          : result.latestChangeValue.toFixed(1);
-        
-        // Format date range for period display with better readability
-        const fromTimestamp = dateUtils.parseTimestamp(timestamps[timestamps.length - 2]);
-        const toTimestamp = dateUtils.parseTimestamp(timestamps[timestamps.length - 1]);
-        result.latestChangePeriod = `${dateUtils.formatDate(fromTimestamp)} → ${dateUtils.formatDate(toTimestamp)}`;
-      }
-    } else if (timestamps.length === 1) {
-      // Only one rating available
-      result.currentRating = historyObj[timestamps[0]];
+    // Process all ratings with timestamps and parse them
+    const allRatings = timestamps
+      .map(timestamp => ({
+        timestamp,
+        rating: historyObj[timestamp],
+        parsed: dateUtils.parseTimestamp(timestamp)
+      }))
+      .filter(item => item.rating !== null && item.parsed.valid);
+    
+    if (allRatings.length === 0) {
+      return result; // No valid ratings to process
     }
     
-    // Generate tooltip content
-    result.ratingHistoryDetails = ratingUtils.createHistoryTooltipContent(sortedTimestamps);
+    // Sort all ratings by date
+    allRatings.sort((a, b) => a.parsed.date - b.parsed.date);
+    
+    // Get the latest rating (most recent date)
+    const latestRating = allRatings[allRatings.length - 1];
+    result.currentRating = latestRating.rating;
+    
+    // Filter ratings from the past 6 months
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const recentRatings = allRatings.filter(r => r.parsed.date >= sixMonthsAgo);
+    const ratingsToUse = recentRatings.length > 0 ? recentRatings : allRatings;
+    
+    // Find lowest and highest ratings in the period
+    const sortedByRating = [...ratingsToUse].sort((a, b) => a.rating - b.rating);
+    const lowestRating = sortedByRating[0];
+    const highestRating = sortedByRating[sortedByRating.length - 1];
+    
+    // Calculate rating difference based on latest rating position
+    if (latestRating.rating > lowestRating.rating) {
+      // If latest rating is higher than lowest, show improvement from lowest
+      result.ratingRangeValue = latestRating.rating - lowestRating.rating;
+    } else if (latestRating.rating < highestRating.rating) {
+      // If latest rating is lower than highest, show drop from highest
+      result.ratingRangeValue = latestRating.rating - highestRating.rating;
+    } else {
+      // If latest is both highest and lowest (or equal to both), show 0
+      result.ratingRangeValue = 0;
+    }
+    
+    // Format display value with sign (except for 0)
+    result.ratingRangeDisplay = result.ratingRangeValue === 0 
+      ? '0.0' 
+      : (result.ratingRangeValue > 0 ? '+' : '') + result.ratingRangeValue.toFixed(1);
+    
+    // Store absolute value for sorting
+    result.ratingDifferenceSortValue = Math.abs(result.ratingRangeValue);
+    
+    // Format date range for the entire history period
+    const firstRating = allRatings[0];
+    result.ratingRangePeriod = `${dateUtils.formatDate(firstRating.parsed)} → ${dateUtils.formatDate(latestRating.parsed)}`;
+    
+    // Prepare ratings for history details tooltip
+    const uniqueRatings = [latestRating];
+    
+    // Add highest if different from latest
+    if (highestRating !== latestRating) {
+      uniqueRatings.push(highestRating);
+    }
+    
+    // Add lowest if different from latest and highest
+    if (lowestRating !== latestRating && lowestRating !== highestRating) {
+      uniqueRatings.push(lowestRating);
+    }
+    
+    // Add first record if different from others
+    if (firstRating !== latestRating && firstRating !== highestRating && firstRating !== lowestRating) {
+      uniqueRatings.push(firstRating);
+    }
+    
+    // Sort by date for display in descending order (newest first)
+    uniqueRatings.sort((a, b) => b.parsed.date - a.parsed.date);
+    
+    // Generate tooltip content with the selected ratings
+    result.ratingHistoryDetails = ratingUtils.createHistoryTooltipContent(uniqueRatings);
     
     return result;
   },
   
   // Create detailed history for tooltip with cleaner logic and improved timestamp formatting
+  // Shows most recent ratings first (reverse chronological order)
   createHistoryTooltipContent: (sortedItems) => {
-    return sortedItems.map(item => {
+    // Create a copy of the array to avoid mutating the original
+    const items = [...sortedItems];
+    // Reverse the array to show most recent first
+    return items.reverse().map(item => {
       const { rating, parsed } = item;
       
       // Format timestamp with improved readability and minute rounding
