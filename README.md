@@ -1,6 +1,6 @@
 # Nearby Beverage Explorer
 
-A comprehensive data pipeline and web application for tracking and analyzing beverage establishments near a specified location. The system collects data from Google Places API, processes it using Apache Hudi for time-travel queries, and presents it through a modern web interface.
+A comprehensive data pipeline and web application for tracking and analyzing beverage establishments near a specified location. The system collects data from Google Places API, processes it using Apache Hudi for time-travel queries, and presents it through a modern web interface. And, the website part is based the development of vibe coding using Windsurf.
 
 ![Nearby Beverage Explorer](https://img.shields.io/badge/Status-Active-brightgreen)
 ![License](https://img.shields.io/badge/License-MIT-blue)
