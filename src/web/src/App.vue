@@ -47,8 +47,8 @@
           <tr>
             <th @click="sort('name')">Name</th>
             <th @click="sort('current_rating')">Latest Rating</th>
-            <th @click="sort('latest_change_value')">
-              Latest Change
+            <th @click="sort('rating_difference_sort_value')">
+              Rating Difference
               <span
                 class="tooltip-header-icon"
                 @mouseenter="showTooltip($event, 'Hover over values in this column to see detailed rating history')"
@@ -71,12 +71,12 @@
                 <div class="stars-empty">★★★★★</div>
               </div>
             </td>
-            <td :class="[place.latest_change_value ? getRatingChangeClass(place.latest_change_value) : '', 'tooltip-trigger']"
+            <td class="tooltip-trigger"
               @mouseenter="showTooltip($event, place.rating_history_details)"
               @mouseleave="hideTooltip()">
-              <div v-if="place.latest_change_display">
-                {{ place.latest_change_display }}
-                <br><small class="latest-change-period">{{ place.latest_change_period }}</small>
+              <div v-if="place.rating_range_display !== null">
+                {{ place.rating_range_display }}
+                <br><small class="rating-range-period">{{ place.rating_range_period }}</small>
               </div>
               <div v-else>-</div>
             </td>

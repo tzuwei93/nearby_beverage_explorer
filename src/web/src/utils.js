@@ -157,46 +157,93 @@ export const ratingUtils = {
     // Initialize result object
     const result = {
       currentRating: null,
-      latestChangeValue: null,
-      latestChangeDisplay: null,
-      latestChangePeriod: null,
+      ratingRangeValue: null,
+      ratingRangeDisplay: null,
+      ratingRangePeriod: null,
       ratingHistoryDetails: ''
     };
     
     // Process rating data based on available history
     if (timestamps.length > 1) {
-      // Get the most recent rating
-      result.currentRating = historyObj[timestamps[timestamps.length - 1]];
+      // Get all valid ratings from history
+      const ratings = timestamps
+        .map(timestamp => historyObj[timestamp])
+        .filter(rating => rating !== null);
       
-      // Get the previous rating
-      const previousRating = historyObj[timestamps[timestamps.length - 2]];
-      
-      // Calculate latest change
-      if (previousRating !== null && result.currentRating !== null) {
-        result.latestChangeValue = result.currentRating - previousRating;
-        result.latestChangeDisplay = result.latestChangeValue > 0 
-          ? `+${result.latestChangeValue.toFixed(1)}` 
-          : result.latestChangeValue.toFixed(1);
+      if (ratings.length > 0) {
+        // Set current rating to the most recent one
+        result.currentRating = ratings[ratings.length - 1];
         
-        // Format date range for period display with better readability
-        const fromTimestamp = dateUtils.parseTimestamp(timestamps[timestamps.length - 2]);
-        const toTimestamp = dateUtils.parseTimestamp(timestamps[timestamps.length - 1]);
-        result.latestChangePeriod = `${dateUtils.formatDate(fromTimestamp)} → ${dateUtils.formatDate(toTimestamp)}`;
+        // Calculate rating difference (latest - oldest) to show direction of change
+        const firstRating = ratings[0];
+        const lastRating = ratings[ratings.length - 1];
+        result.ratingRangeValue = lastRating - firstRating;
+        
+        // Format display value with sign (except for 0)
+        result.ratingRangeDisplay = result.ratingRangeValue === 0 
+          ? '0.0' 
+          : (result.ratingRangeValue > 0 ? '+' : '') + result.ratingRangeValue.toFixed(1);
+        
+        // Store absolute value for sorting
+        result.ratingDifferenceSortValue = Math.abs(result.ratingRangeValue);
+        
+        // Format date range for the entire history period
+        const firstTimestamp = dateUtils.parseTimestamp(timestamps[0]);
+        const lastTimestamp = dateUtils.parseTimestamp(timestamps[timestamps.length - 1]);
+        result.ratingRangePeriod = `${dateUtils.formatDate(firstTimestamp)} → ${dateUtils.formatDate(lastTimestamp)}`;
       }
     } else if (timestamps.length === 1) {
       // Only one rating available
       result.currentRating = historyObj[timestamps[0]];
     }
     
-    // Generate tooltip content
-    result.ratingHistoryDetails = ratingUtils.createHistoryTooltipContent(sortedTimestamps);
+    // Filter ratings from the past 6 months
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    
+    const recentRatings = sortedTimestamps
+      .map(item => ({
+        ...item,
+        parsed: dateUtils.parseTimestamp(item.timestamp),
+        rating: historyObj[item.timestamp]
+      }))
+      .filter(item => item.parsed.valid && item.parsed.date >= sixMonthsAgo && item.rating !== null);
+    
+    if (recentRatings.length > 0) {
+      // Find highest, lowest, and latest ratings
+      const latest = recentRatings[recentRatings.length - 1];
+      const sortedByRating = [...recentRatings].sort((a, b) => a.rating - b.rating);
+      const lowest = sortedByRating[0];
+      const highest = sortedByRating[sortedByRating.length - 1];
+      
+      // Create a Set to ensure unique entries (in case highest/lowest is also the latest)
+      const uniqueRatings = new Set();
+      uniqueRatings.add(JSON.stringify(latest));
+      uniqueRatings.add(JSON.stringify(highest));
+      uniqueRatings.add(JSON.stringify(lowest));
+      
+      // Convert back to objects and sort by date
+      const selectedRatings = Array.from(uniqueRatings)
+        .map(str => JSON.parse(str))
+        .sort((a, b) => a.parsed.date - b.parsed.date);
+      
+      // Generate tooltip content with filtered ratings
+      result.ratingHistoryDetails = ratingUtils.createHistoryTooltipContent(selectedRatings);
+    } else {
+      // If no recent ratings, show all available ratings
+      result.ratingHistoryDetails = ratingUtils.createHistoryTooltipContent(sortedTimestamps);
+    }
     
     return result;
   },
   
   // Create detailed history for tooltip with cleaner logic and improved timestamp formatting
+  // Shows most recent ratings first (reverse chronological order)
   createHistoryTooltipContent: (sortedItems) => {
-    return sortedItems.map(item => {
+    // Create a copy of the array to avoid mutating the original
+    const items = [...sortedItems];
+    // Reverse the array to show most recent first
+    return items.reverse().map(item => {
       const { rating, parsed } = item;
       
       // Format timestamp with improved readability and minute rounding
