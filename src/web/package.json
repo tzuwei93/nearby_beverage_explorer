@@ -1,7 +1,7 @@
 {
   "name": "nearby-beverage-explorer-web",
   "homepage": "https://william0537.github.io/nearby-beverage-explorer",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "scripts": {
     "dev": "vite",

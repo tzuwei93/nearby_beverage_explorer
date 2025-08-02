@@ -90,9 +90,9 @@ export const dataService = {
   processPlaceData(rawData) {
     return rawData.map(place => {
       let currentRating = null
-      let latestChangeValue = null
-      let latestChangeDisplay = null
-      let latestChangePeriod = null
+      let ratingRangeValue = null
+      let ratingRangeDisplay = null
+      let ratingRangePeriod = null
       let ratingHistoryDetails = ''
 
       // Process ratings history data
@@ -102,10 +102,13 @@ export const dataService = {
           const historyResult = ratingUtils.processHistory(historyObj)
           
           currentRating = historyResult.currentRating
-          latestChangeValue = historyResult.latestChangeValue
-          latestChangeDisplay = historyResult.latestChangeDisplay
-          latestChangePeriod = historyResult.latestChangePeriod
+          ratingRangeValue = historyResult.ratingRangeValue
+          ratingRangeDisplay = historyResult.ratingRangeDisplay
+          ratingRangePeriod = historyResult.ratingRangePeriod
           ratingHistoryDetails = historyResult.ratingHistoryDetails
+          
+          // Set the sort value using the absolute value of the rating difference
+          place.rating_difference_sort_value = historyResult.ratingDifferenceSortValue || 0
         } catch (e) {
           console.warn('Error processing history ratings for place:', place.name, e)
         }
@@ -114,10 +117,12 @@ export const dataService = {
       return {
         ...place,
         current_rating: currentRating,
-        latest_change_value: latestChangeValue,
-        latest_change_display: latestChangeDisplay,
-        latest_change_period: latestChangePeriod,
+        rating_range_value: ratingRangeValue,
+        rating_range_display: ratingRangeDisplay,
+        rating_range_period: ratingRangePeriod,
         rating_history_details: ratingHistoryDetails,
+        // Use the sort value we set earlier, default to 0 if not set
+        rating_difference_sort_value: place.rating_difference_sort_value || 0,
         // Use the Google Maps URL provided by the backend
         url: place.google_maps_url
       }

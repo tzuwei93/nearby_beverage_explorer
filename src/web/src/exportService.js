@@ -11,7 +11,7 @@ export const exportService = {
    * @returns {void}
    */
   exportToCsv(filteredPlaces, filename = null) {
-    const headers = ['Name', 'URL', 'Current Rating', 'Latest Change', 'Change Period', 'Rating History', 'Latitude', 'Longitude']
+    const headers = ['Name', 'URL', 'Current Rating', 'Rating Difference', 'Rating Range Period', 'Rating History', 'Latitude', 'Longitude']
     
     // Generate CSV content
     const csvContent = [
@@ -20,8 +20,8 @@ export const exportService = {
         `"${place.name}"`,
         `"${place.url}"`,
         place.current_rating ? place.current_rating.toFixed(1) : '',
-        place.latest_change_value ? place.latest_change_value.toFixed(1) : '',
-        `"${place.latest_change_period || ''}"`,
+        place.rating_range_value !== null ? place.rating_range_value.toFixed(1) : '',
+        `"${place.rating_range_period || ''}"`,
         `"${dataUtils.formatHistoryRatingsForCsv(place.history_ratings)}"`,
         place.latitude ? place.latitude.toFixed(4) : '',
         place.longitude ? place.longitude.toFixed(4) : ''

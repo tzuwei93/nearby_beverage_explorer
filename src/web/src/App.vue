@@ -12,7 +12,7 @@
       </div>
       <p>
         Powered by Apache Hudi <a href="https://hudi.apache.org/docs/quick-start-guide/#timetravel" target="_blank" rel="noopener noreferrer">
-          Time Travel Queries</a>, Google Map API, AWS Lambda, Step Functions, S3, Vue.js, Hyparquet.js
+          Time Travel Queries</a>, Google Map API, AWS Lambda, Step Functions, S3, Vue.js, <a href="https://github.com/hyparam/hyparquet" target="_blank" rel="noopener noreferrer">Hyparquet.js</a>
       </p>
     </header>
 
@@ -42,16 +42,35 @@
       {{ error }}
     </div>
     <div v-else class="table-container">
+      <div class="pagination-controls">
+        <button 
+          @click="currentPage--" 
+          :disabled="currentPage === 1"
+          class="pagination-button"
+        >
+          Previous
+        </button>
+        <span class="page-info">
+          Page {{ currentPage }} of {{ totalPages }}
+        </span>
+        <button 
+          @click="currentPage++" 
+          :disabled="currentPage >= totalPages"
+          class="pagination-button"
+        >
+          Next
+        </button>
+      </div>
       <table>
         <thead>
           <tr>
             <th @click="sort('name')">Name</th>
             <th @click="sort('current_rating')">Latest Rating</th>
-            <th @click="sort('latest_change_value')">
-              Latest Change
+            <th @click="sort('rating_difference_sort_value')">
+              Rating Difference
               <span
                 class="tooltip-header-icon"
-                @mouseenter="showTooltip($event, 'Hover over values in this column to see detailed rating history')"
+                @mouseenter="showTooltip($event, 'Shows the difference between the highest and lowest ratings in the past 6 months. The value is calculated as (highest - lowest). Additionally, the first and latest rating in the past 6 months will be presented.')"
                 @mouseleave="hideTooltip()"
               >ⓘ</span>
             </th>
@@ -59,7 +78,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="place in filteredPlaces" :key="place.unique_id" 
+          <tr v-for="place in paginatedPlaces" :key="place.unique_id" 
               class="data-row">
             <td>
               <a :href="place.url" target="_blank" class="maps-link">{{ place.name }}</a>
@@ -71,12 +90,12 @@
                 <div class="stars-empty">★★★★★</div>
               </div>
             </td>
-            <td :class="[place.latest_change_value ? getRatingChangeClass(place.latest_change_value) : '', 'tooltip-trigger']"
+            <td class="tooltip-trigger"
               @mouseenter="showTooltip($event, place.rating_history_details)"
               @mouseleave="hideTooltip()">
-              <div v-if="place.latest_change_display">
-                {{ place.latest_change_display }}
-                <br><small class="latest-change-period">{{ place.latest_change_period }}</small>
+              <div v-if="place.rating_range_display !== null">
+                {{ place.rating_range_display }}
+                <br><small class="rating-range-period">{{ place.rating_range_period }}</small>
               </div>
               <div v-else>-</div>
             </td>
@@ -86,12 +105,26 @@
           </tr>
         </tbody>
       </table>
+      
+      <!-- Footer with GitHub link -->
+      <footer class="app-footer">
+        <div class="footer-content">
+          <p>This project is open source on 
+            <a href="https://github.com/tzuwei93/nearby_beverage_explorer" 
+               target="_blank" 
+               rel="noopener noreferrer"
+               class="github-link">
+              GitHub
+            </a>
+          </p>
+        </div>
+      </footer>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { dateUtils, ratingUtils, tooltipUtils, dataUtils } from './utils.js'
 import { dataService } from './dataService.js'
 import { locationService } from './locationService.js'
@@ -108,8 +141,11 @@ export default {
     const searchQuery = ref('')
     const typeFilter = ref('')
     const ratingFilter = ref('')
-    const sortKey = ref('name')
-    const sortOrder = ref('asc')
+    // Default sort by rating difference (absolute value) descending
+    const sortKey = ref('rating_difference_sort_value')
+    const sortOrder = ref('desc')
+    const currentPage = ref(1)
+    const itemsPerPage = 5
     
     // Access environment variables (works with both Vite and Vue CLI)
     const envVars = import.meta.env || {}
@@ -208,6 +244,21 @@ export default {
       })
     })
 
+    const totalPages = computed(() => {
+      return Math.ceil(filteredPlaces.value.length / itemsPerPage)
+    })
+
+    const paginatedPlaces = computed(() => {
+      const start = (currentPage.value - 1) * itemsPerPage
+      const end = start + itemsPerPage
+      return filteredPlaces.value.slice(start, end)
+    })
+
+    // Reset to first page when filters change
+    watch([searchQuery, ratingFilter, sortKey, sortOrder], () => {
+      currentPage.value = 1
+    })
+
     const sort = (key) => {
       tableService.handleSort(key, { sortKey: sortKey.value, sortOrder: sortOrder.value }, (newSortKey, newSortOrder) => {
         sortKey.value = newSortKey
@@ -270,9 +321,14 @@ export default {
       locations,
       selectedLocationIndex,
       handleLocationChange,
+      // Pagination
+      currentPage,
+      totalPages,
       // Tooltip functions
       showTooltip,
-      hideTooltip
+      hideTooltip,
+      // Computed
+      paginatedPlaces
     }
   }
 }
@@ -349,9 +405,39 @@ header {
 /* ===== TABLE STYLING ===== */
 .table-container {
   overflow-x: auto;
-  background-color: #fff;
-  border-radius: 8px;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1);
+  margin: 20px 0;
+}
+
+.pagination-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.pagination-button {
+  padding: 6px 12px;
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.pagination-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination-button:not(:disabled):hover {
+  background-color: #e0e0e0;
+}
+
+.page-info {
+  min-width: 100px;
+  text-align: center;
+  font-weight: 500;
 }
 
 table {
@@ -648,5 +734,33 @@ th.sort-desc::after {
 
 .data-row:hover {
   background-color: #f5f9ff;
+}
+
+/* ===== FOOTER ===== */
+.app-footer {
+  margin-top: 3rem;
+  padding: 1.5rem 0;
+  border-top: 1px solid #e0e0e0;
+  text-align: center;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.footer-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.github-link {
+  color: #1976d2;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.github-link:hover {
+  color: #0d47a1;
+  text-decoration: underline;
 }
 </style>
